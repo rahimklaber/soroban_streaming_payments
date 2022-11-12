@@ -17,6 +17,7 @@ pub enum Error {
     IncorrectNonce = 4,
     StreamCancelled = 5,
     StreamNotCancellable = 6,
+    StreamDone = 7,
 }
 
 #[derive(Clone)]
@@ -57,7 +58,6 @@ pub struct Stream {
 
 
 pub trait StreamingTrait {
-    // fn init(env: Env);
     //create stream
     fn c_stream(env: Env, signature: Signature, nonce: BigInt, stream : Stream) -> u64;
     // withdraw from streaam
@@ -73,10 +73,6 @@ pub struct  StreamingContract;
 
 #[contractimpl]
 impl StreamingTrait for StreamingContract{
-
-    // fn init(env: Env){
-
-    // }
     // create the stream by sending withdrawable funds to this contract
     // returns the id of the created stream
     fn c_stream(env: Env, signature: Signature, nonce: BigInt, stream : Stream) -> u64 {
@@ -124,6 +120,11 @@ impl StreamingTrait for StreamingContract{
             panic_error!(&env, Error::StreamCancelled);
         }
 
+        // check if all tokens have been withdrawn
+        if stream_data.a_withdraw == stream.amount{
+            panic_error!(&env, Error::StreamDone);
+        }
+
         // check that the signature is valid
         verify(&env, &signature, symbol!("w_stream"), (&id, &nonce));
 
@@ -167,6 +168,13 @@ impl StreamingTrait for StreamingContract{
         let stream = get_stream(&env, stream_id);
         let stream_data = get_stream_data(&env, stream_id);
 
+        let id = signature.identifier(&env);
+
+        // check if creator of stream
+        if stream.from != id{
+            panic_error!(&env, Error::NotAuthorized);
+        } 
+
         // check if stream is cancellable
         if !stream.able_stop{
             panic_error!(&env, Error::StreamNotCancellable);
@@ -176,14 +184,13 @@ impl StreamingTrait for StreamingContract{
             panic_error!(&env, Error::StreamCancelled);
         }
         // dont need nonce, since we can only stop once.
-        verify(&env, &signature, symbol!("s_stream"), (&signature.identifier(&env), stream_id));
+        verify(&env, &signature, symbol!("s_stream"), (&id, stream_id));
 
         // send back everything that wasn't withdrawn
         token::Client::new(&env, stream.token_c_id.clone())
-                .xfer(&Signature::Invoker, &BigInt::zero(&env), &stream.from, &(&stream.amount - &stream_data.a_withdraw));
+                .xfer(&Signature::Invoker, &BigInt::zero(&env), &id, &(&stream.amount - &stream_data.a_withdraw));
 
         set_stream_data_cancelled(&env, stream_id);
-
     }
     // retrieve stream and additional stream data
     fn get_stream(env: Env, stream_id: u64) -> (Stream,StreamData){
