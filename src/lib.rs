@@ -158,6 +158,11 @@ impl StreamingTrait for StreamingContract{
         // get the amount of funds that we can withdraw minus the amount we have allready withdrawn
         let amount_to_withdraw = amount_per_tick * elapsed_ticks - &stream_data.a_withdraw;
 
+        // don't invoke the token contract if amount == 0
+        if amount_to_withdraw == BigInt::zero(&env) {
+            return;
+        }
+
         token::Client::new(&env, stream.token_c_id.clone())
         .xfer(&Signature::Invoker, &BigInt::zero(&env), &stream.to, &amount_to_withdraw);
 
