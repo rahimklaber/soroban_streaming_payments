@@ -55,12 +55,12 @@ fn test(){
         able_stop: false,
     };
 
-    let stream_id = stream_client.c_stream(&stream);
+    let stream_id = stream_client.c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
     
     assert_eq!(BigInt::from_u64(&env,10),token_client.balance(&soroban_auth::Identifier::Contract(streaming_contract_id)));
 
     env.ledger().set(LedgerInfo {
-        timestamp: env.ledger().timestamp() + 1,
+        timestamp: env.ledger().timestamp() + 5,
         protocol_version: 1,
         sequence_number: 1,
         network_passphrase: Default::default(),
@@ -71,7 +71,7 @@ fn test(){
     stream_client.with_source_account(&user_2)
     .w_stream(&Signature::Invoker, &BigInt::zero(&env), &stream_id);
 
-    assert_eq!(BigInt::from_u32(&env, 1),token_client.balance(&Identifier::Account(user_2)));
+    assert_eq!(BigInt::from_u32(&env, 5),token_client.balance(&Identifier::Account(user_2)));
 
 
 }

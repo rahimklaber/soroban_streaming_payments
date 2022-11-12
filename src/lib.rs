@@ -1,7 +1,5 @@
 #![no_std]
 
-use core::ops::BitAnd;
-
 use soroban_auth::{Signature, Identifier, verify};
 use soroban_sdk::{contracttype, Env, BigInt, BytesN, contractimpl, contracterror, panic_error, symbol};
 
@@ -17,6 +15,8 @@ pub enum Error {
     NotAuthorized = 2,
     IncorrectNonceForInvoker = 3,
     IncorrectNonce = 4,
+    StreamCancelled = 5,
+    StreamNotCancellable = 6,
 }
 
 #[derive(Clone)]
@@ -57,9 +57,16 @@ pub struct Stream {
 
 
 pub trait StreamingTrait {
-    fn init(env: Env);
-    fn c_stream(env: Env, stream : Stream) -> u64;
-    fn w_stream(env: Env,signature: Signature, nonce: BigInt, stream_id : u64);
+    // fn init(env: Env);
+    //create stream
+    fn c_stream(env: Env, signature: Signature, nonce: BigInt, stream : Stream) -> u64;
+    // withdraw from streaam
+    fn w_stream(env: Env, signature: Signature, nonce: BigInt, stream_id : u64);
+    //cancell/stop stream
+    fn s_stream(env: Env, signature: Signature, stream_id : u64);
+
+    fn get_stream(env: Env, stream_id : u64) -> (Stream,StreamData);
+    fn nonce(env: Env, id: Identifier) -> BigInt;
 }
 
 pub struct  StreamingContract;
@@ -67,12 +74,19 @@ pub struct  StreamingContract;
 #[contractimpl]
 impl StreamingTrait for StreamingContract{
 
-    fn init(env: Env){
+    // fn init(env: Env){
 
-    }
+    // }
     // create the stream by sending withdrawable funds to this contract
     // returns the id of the created stream
-    fn c_stream(env: Env, stream : Stream) -> u64 {
+    fn c_stream(env: Env, signature: Signature, nonce: BigInt, stream : Stream) -> u64 {
+        let id = signature.identifier(&env);
+
+        // check that the signature is valid
+        verify(&env, &signature, symbol!("c_stream"), (&id, &nonce));
+
+        //consume and check that nonce is valid
+        verify_and_consume_nonce(&env, &signature, &nonce);
 
         token::Client::new(&env, stream.token_c_id.clone())
         .xfer_from(&soroban_auth::Signature::Invoker, &BigInt::from_u32(&env, 0),&stream.from ,&soroban_auth::Identifier::Contract(env.current_contract()), &stream.amount);
@@ -105,6 +119,11 @@ impl StreamingTrait for StreamingContract{
             panic_error!(&env, Error::NotAuthorized);
         }
 
+        // check if stream has been cancelled
+        if stream_data.cancelled{
+            panic_error!(&env, Error::StreamCancelled);
+        }
+
         // check that the signature is valid
         verify(&env, &signature, symbol!("w_stream"), (&id, &nonce));
 
@@ -115,7 +134,7 @@ impl StreamingTrait for StreamingContract{
         // if we are over the end of the stream, then withdraw everything.
         if stream.end_time < env.ledger().timestamp(){
             token::Client::new(&env, stream.token_c_id.clone())
-                .xfer_from(&Signature::Invoker, &BigInt::zero(&env), &stream.from , &stream.to, &(&stream.amount - &stream_data.a_withdraw));
+                .xfer(&Signature::Invoker, &BigInt::zero(&env), &stream.to, &(&stream.amount - &stream_data.a_withdraw));
 
             update_amount_withdrawn(&env, stream_id, stream.amount);
             return
@@ -139,9 +158,40 @@ impl StreamingTrait for StreamingContract{
         let amount_to_withdraw = amount_per_tick * elapsed_ticks - &stream_data.a_withdraw;
 
         token::Client::new(&env, stream.token_c_id.clone())
-        .xfer_from(&Signature::Invoker, &BigInt::zero(&env), &stream.from , &stream.to, &amount_to_withdraw);
+        .xfer(&Signature::Invoker, &BigInt::zero(&env), &stream.to, &amount_to_withdraw);
 
         update_amount_withdrawn(&env, stream_id, &stream_data.a_withdraw + &amount_to_withdraw);
+    }
+    //stop stream if it is cancellable and return the available funds back to the creataor of the stream
+    fn s_stream(env: Env, signature: Signature, stream_id: u64){
+        let stream = get_stream(&env, stream_id);
+        let stream_data = get_stream_data(&env, stream_id);
+
+        // check if stream is cancellable
+        if !stream.able_stop{
+            panic_error!(&env, Error::StreamNotCancellable);
+        }
+        // check if stream is allready cancelled
+        if stream_data.cancelled{
+            panic_error!(&env, Error::StreamCancelled);
+        }
+        // dont need nonce, since we can only stop once.
+        verify(&env, &signature, symbol!("s_stream"), (&signature.identifier(&env), stream_id));
+
+        // send back everything that wasn't withdrawn
+        token::Client::new(&env, stream.token_c_id.clone())
+                .xfer(&Signature::Invoker, &BigInt::zero(&env), &stream.from, &(&stream.amount - &stream_data.a_withdraw));
+
+        set_stream_data_cancelled(&env, stream_id);
+
+    }
+    // retrieve stream and additional stream data
+    fn get_stream(env: Env, stream_id: u64) -> (Stream,StreamData){
+        (get_stream(&env, stream_id), get_stream_data(&env, stream_id))
+    }
+
+    fn nonce(env: Env, id: Identifier) -> BigInt {
+        get_nonce(&env, &id)
     }
 }
 fn get_and_inc_stream_id(env: &Env) -> u64 {
@@ -173,6 +223,14 @@ fn get_stream_data(env: &Env, stream_id: u64) -> StreamData{
         Some(Ok(stream)) => stream,
         _ => panic_error!(&env,Error::StreamNotExist),
     }
+}
+
+fn set_stream_data_cancelled(env: &Env, stream_id: u64){
+    env.data()
+    .set(DataKey::StreamData(stream_id), StreamData{
+        a_withdraw: BigInt::zero(env), //not sure if this should be the value withdrawn by the recipient. Technically, its not needed anymore, but it might be usefull.
+        cancelled: true
+    })
 }
 
 fn update_amount_withdrawn(env: &Env, stream_id: u64, total_amount_withdrawn: BigInt){
