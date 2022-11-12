@@ -247,7 +247,10 @@ fn set_stream_data_cancelled(env: &Env, stream_id: u64){
 
 fn update_amount_withdrawn(env: &Env, stream_id: u64, total_amount_withdrawn: BigInt){
     env.data()
-    .set(DataKey::StreamData(stream_id),total_amount_withdrawn);
+    .set(DataKey::StreamData(stream_id), StreamData{
+        a_withdraw: total_amount_withdrawn,
+        cancelled: false
+    });
 }
 
 fn verify_and_consume_nonce(env: &Env, sig: &Signature, nonce: &BigInt) {

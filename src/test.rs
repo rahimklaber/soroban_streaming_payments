@@ -71,7 +71,11 @@ fn test(){
     stream_client.with_source_account(&user_2)
     .w_stream(&Signature::Invoker, &BigInt::zero(&env), &stream_id);
 
-    assert_eq!(BigInt::from_u32(&env, 5),token_client.balance(&Identifier::Account(user_2)));
+    assert_eq!(BigInt::from_u32(&env, 5),token_client.balance(&Identifier::Account(user_2.clone())));
 
+    stream_client.with_source_account(&user_2)
+    .w_stream(&Signature::Invoker, &BigInt::zero(&env), &stream_id);
+
+    assert_eq!(BigInt::from_u32(&env, 5),token_client.balance(&Identifier::Account(user_2)));
 
 }
