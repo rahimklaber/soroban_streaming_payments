@@ -55,7 +55,9 @@ fn test(){
         able_stop: false,
     };
 
-    let stream_id = stream_client.c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
+    let stream_id = stream_client
+    .with_source_account(&user_1)
+    .c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
     
     assert_eq!(BigInt::from_u64(&env,10),token_client.balance(&soroban_auth::Identifier::Contract(streaming_contract_id)));
 

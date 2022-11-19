@@ -5,6 +5,42 @@
 This is an example contract that allows for streaming payments.
 One account can create a stream to another account that can be claimed gradually over a period of time.
 
+## How to use
+
+First create a stream object to hold details about the stream
+```rust
+let stream = Stream{
+    // the creator of the stream
+    from: Identifier::Account(user_1.clone()),
+    // the recipient of the stream
+    to: Identifier::Account(user_2.clone()),
+    // the amount of the stream
+    amount: BigInt::from_u64(&env,10),
+    // when the stream starts
+    start_time: env.ledger().timestamp(),
+    // when the stream ends, after this time all of the remaining balance will be withdrawable by the recipient
+    end_time: env.ledger().timestamp() + 10,
+    // Every `tick_time` seconds new tokens are claimable from the stream. 
+    // so a `tick_time` of 1 second means that every second tokens are withdrawable from the stream.
+    tick_time: 1,
+    // what token the stream is for
+    token_c_id: token_contract_id.clone(),
+    // wether the creator of the stream is able to cancel it.
+    able_stop: false,
+};
+```
+
+Then create the stream 
+```rust
+let stream_id = stream_client.c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
+```
+
+The recipient can withdraw from the stream after some time
+```rust
+stream_client.with_source_account(&user_2)
+.w_stream(&Signature::Invoker, &BigInt::zero(&env), &stream_id);
+```
+
 
 ## Example
 
@@ -29,7 +65,7 @@ let stream = Stream{
     able_stop: false,
 };
 
-let stream_id = stream_client.c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
+let stream_id = stream_client.with_source_account(&user_1).c_stream(&Signature::Invoker, &BigInt::zero(&env), &stream);
 
 assert_eq!(BigInt::from_u64(&env,10),token_client.balance(&soroban_auth::Identifier::Contract(streaming_contract_id)));
 
@@ -48,3 +84,4 @@ stream_client.with_source_account(&user_2)
 assert_eq!(BigInt::from_u32(&env, 5),token_client.balance(&Identifier::Account(user_2.clone())));
 
 ```
+
